@@ -1,0 +1,7 @@
+{$RAG_DOMAIN} {
+    encode zstd gzip
+    basic_auth {
+        {$RAG_USER} {$RAG_PASSWORD_HASH}
+    }
+    reverse_proxy frontend:8501
+}

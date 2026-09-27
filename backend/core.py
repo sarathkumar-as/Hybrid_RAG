@@ -1,0 +1,110 @@
+import hashlib
+import io
+import json
+import re
+from dataclasses import dataclass
+
+from pypdf import PdfReader
+from docx import Document
+
+
+@dataclass
+class Chunk:
+    id: str
+    doc_id: str
+    filename: str
+    page: int
+    text: str
+
+
+def _split_text(text: str, doc_id: str, filename: str, page: int) -> list[Chunk]:
+    # Keep headings and list boundaries: collapsing all whitespace makes a numbered
+    # source list look like ordinary prose and invites an over-broad summary.
+    text = re.sub(r"[ \t]+", " ", text.replace("\r\n", "\n").replace("\r", "\n"))
+    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+    chunks = []
+    tokens = re.findall(r"\n|[^\s]+", text)
+    for start in range(0, len(tokens), 170):
+        section = " ".join(tokens[start:start + 210]).replace(" \n ", "\n").strip()
+        if len(section) >= 25:
+            chunks.append(Chunk(f"{doc_id}:{page}:{start}", doc_id, filename, page, section))
+    return chunks
+
+
+def document_chunks(data: bytes, filename: str, max_pages: int = 100, max_chunks: int = 150) -> list[Chunk]:
+    suffix = filename.rsplit(".", 1)[-1].lower()
+    doc_id = hashlib.sha256(data).hexdigest()
+    if suffix not in ("pdf", "docx", "txt", "md"):
+        raise ValueError("Supported formats: PDF, DOCX, TXT, Markdown (.md).")
+    if suffix != "pdf":
+        if suffix == "docx":
+            document = Document(io.BytesIO(data))
+            blocks = [p.text for p in document.paragraphs]
+            for table in document.tables:
+                for row in table.rows:
+                    blocks.append(" | ".join(cell.text for cell in row.cells))
+            text = "\n".join(blocks)
+        else:
+            try:
+                text = data.decode("utf-8-sig")
+            except UnicodeDecodeError as exc:
+                raise ValueError("TXT/Markdown must be UTF-8 encoded.") from exc
+        # A non-PDF file has no reliable page numbers; section 1 denotes the document body.
+        chunks = _split_text(text, doc_id, filename, 1)
+    else:
+        chunks = pdf_chunks(data, filename, max_pages, max_chunks)
+    if len(chunks) > max_chunks:
+        raise ValueError(f"Document exceeds the {max_chunks} chunk limit.")
+    if not chunks:
+        raise ValueError("No extractable text found. Run OCR on scanned PDFs first.")
+    return chunks
+
+
+def pdf_chunks(data: bytes, filename: str, max_pages: int = 100, max_chunks: int = 150) -> list[Chunk]:
+    reader = PdfReader(io.BytesIO(data))
+    if reader.is_encrypted:
+        raise ValueError("Encrypted PDFs are unsupported. Unlock the PDF before upload.")
+    if len(reader.pages) > max_pages:
+        raise ValueError(f"PDF exceeds the {max_pages} page limit.")
+    doc_id = hashlib.sha256(data).hexdigest()
+    chunks = []
+    for page_no, page in enumerate(reader.pages, 1):
+        text = page.extract_text() or ""
+        if not text:
+            continue
+        # Keep PDF page boundaries so page citations refer to one real page.
+        chunks.extend(_split_text(text, doc_id, filename, page_no))
+        if len(chunks) > max_chunks:
+            raise ValueError(f"PDF exceeds the {max_chunks} chunk limit.")
+    if not chunks:
+        raise ValueError("No selectable text found. Run OCR on scanned PDFs first.")
+    return chunks
+
+
+def clean_entities(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    result = []
+    for item in value:
+        if not isinstance(item, str):
+            continue
+        name = re.sub(r"\s+", " ", item).strip().lower()[:80]
+        if 2 <= len(name) <= 80 and name not in result:
+            result.append(name)
+    return result[:8]
+
+
+def fuse(vector_ids: list[str], graph_ids: list[str], limit: int = 6) -> list[tuple[str, float]]:
+    scores: dict[str, float] = {}
+    for weight, ids in ((1.0, vector_ids), (1.0, graph_ids)):
+        for rank, cid in enumerate(dict.fromkeys(ids), 1):
+            scores[cid] = scores.get(cid, 0) + weight / (rank + 60)
+    return sorted(scores.items(), key=lambda item: (-item[1], item[0]))[:limit]
+
+
+def parse_json(text: str) -> dict:
+    try:
+        result = json.loads(text)
+        return result if isinstance(result, dict) else {}
+    except (ValueError, TypeError):
+        return {}
