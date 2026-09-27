@@ -94,6 +94,25 @@ def clean_entities(value: object) -> list[str]:
     return result[:8]
 
 
+def heading_query(question: str) -> str | None:
+    """Recognize a short section title rather than treating it as a full question."""
+    heading = question.strip().rstrip(":? ").strip()
+    if not heading or len(heading) > 60 or len(heading.split()) > 4:
+        return None
+    if re.search(r"\b(what|which|who|where|when|why|how|list|explain|describe)\b", heading, re.I):
+        return None
+    return heading
+
+
+def matching_heading_ids(question: str, ids: list[str], documents: list[str]) -> list[str]:
+    """Prefer passages containing an actual heading, not an incidental word."""
+    heading = heading_query(question)
+    if not heading:
+        return []
+    pattern = re.compile(r"(?im)^\s*(?:#{1,6}\s*)?" + re.escape(heading) + r"\s*:(?:\s|$)")
+    return [cid for cid, body in zip(ids, documents) if pattern.search(body)]
+
+
 def fuse(vector_ids: list[str], graph_ids: list[str], limit: int = 6) -> list[tuple[str, float]]:
     scores: dict[str, float] = {}
     for weight, ids in ((1.0, vector_ids), (1.0, graph_ids)):

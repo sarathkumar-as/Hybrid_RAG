@@ -53,6 +53,8 @@ if healthy:
 
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
+if "latest_index_counts" not in st.session_state:
+    st.session_state.latest_index_counts = {"documents": 0, "chunks": 0, "entities": 0, "relationships": 0}
 
 indexed_documents = []
 if healthy:
@@ -90,8 +92,15 @@ with st.sidebar:
                         timeout=600,
                     )
                     if response.ok:
+                        completed = response.json()["documents"]
+                        st.session_state.latest_index_counts = {
+                            "documents": len(completed),
+                            "chunks": sum(item["chunks"] for item in completed),
+                            "entities": sum(item.get("entities", 0) for item in completed),
+                            "relationships": sum(item.get("relationships", 0) for item in completed),
+                        }
                         st.session_state.chat_history = []
-                        st.session_state.upload_message = ", ".join(item["filename"] for item in response.json()["documents"])
+                        st.session_state.upload_message = ", ".join(item["filename"] for item in completed)
                         st.rerun()
                     else:
                         st.error(request_error(response))
@@ -100,20 +109,18 @@ with st.sidebar:
     if st.session_state.get("upload_message"):
         st.success("Indexed: " + st.session_state.pop("upload_message"))
     st.divider()
-    st.markdown("### 📊 Knowledge Base")
-    if graph_summary:
+    st.markdown("### 📊 Latest indexing run")
+    if healthy:
+        counts = st.session_state.latest_index_counts
         c1, c2 = st.columns(2)
-        c1.metric("Documents", graph_summary["documents"])
-        c2.metric("Chunks", graph_summary["chunks"])
+        c1.metric("Documents", counts["documents"])
+        c2.metric("Chunks", counts["chunks"])
         c3, c4 = st.columns(2)
-        c3.metric("Entities", graph_summary["entities"])
-        c4.metric("Relationships", graph_summary["relationships"])
-        st.caption("Neo4j links: " + f"{graph_summary['has_chunk']} document–chunk · {graph_summary['mentions']} chunk–entity · {graph_summary['related_to']} concept–concept. Open the Knowledge Graph tab for details.")
+        c3.metric("Entities", counts["entities"])
+        c4.metric("Relationships", counts["relationships"])
+        st.caption("Starts at 0 in each new browser session. Shows the most recently indexed files; saved knowledge base totals remain in the Knowledge Graph tab.")
     else:
-        if healthy:
-            st.warning("Knowledge graph counts unavailable. Check backend logs.")
-        else:
-            st.info("Knowledge graph unavailable until backend connects.")
+        st.info("Indexing counts unavailable until backend connects.")
     with st.expander("How it works"):
         st.markdown("1. Upload a document.\n2. Text becomes vector embeddings and graph concepts.\n3. Ask a question.\n4. Browse source evidence in the Knowledge Graph tab.")
     st.caption("Scanned PDFs need OCR. Uploaded document text is sent to the configured OpenAI API.")
@@ -204,7 +211,7 @@ with documents_tab:
 
 with graph_tab:
     st.markdown("### Knowledge graph details")
-    st.caption("Browse all live nodes and links from Neo4j, with their source documents and passages. RELATED_TO records a connection without naming a specific relationship type.")
+    st.caption("Totals for all saved documents, including earlier sessions. Browse nodes and links from Neo4j. RELATED_TO records a connection without naming a specific relationship type.")
     if graph_summary:
         metrics = st.columns(4)
         for box, (label, key) in zip(metrics, [("Documents", "documents"), ("Chunks", "chunks"), ("Entities", "entities"), ("Relationships", "relationships")]):
