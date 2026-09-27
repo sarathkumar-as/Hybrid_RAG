@@ -128,7 +128,7 @@ with st.sidebar:
         st.markdown("1. Read text from each file.\n2. Store searchable passages and vectors in Chroma.\n3. Connect passages and concepts in Neo4j.\n4. Show counts after the upload finishes. Then ask in Chat and check the cited text.")
     st.caption("Scanned PDFs need OCR. Uploaded document text is sent to the configured OpenAI API.")
 
-st.markdown('<div class="hero"><h1>Ask your documents</h1><p>Upload a file, ask a question, then check the answer against its source.</p></div>', unsafe_allow_html=True)
+st.markdown('<div class="hero"><h1>Hybrid RAG System - Ask your documents</h1><p>Upload a file, ask a question, then check the answer against its source.</p></div>', unsafe_allow_html=True)
 st.markdown('<div class="workflow"><strong>1 Upload and index</strong> &nbsp; → &nbsp; <strong>2 Ask in Chat</strong> &nbsp; → &nbsp; <strong>3 Read the cited passage</strong><br><small>Search uses saved text in Chroma and document connections in Neo4j. Open the Documents and Knowledge Graph tabs to inspect what was indexed.</small></div>', unsafe_allow_html=True)
 if healthy:
     st.caption(f"✅ Backend ready · {len(indexed_documents)} saved documents · {indexed} searchable passages")
