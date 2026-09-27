@@ -2,6 +2,112 @@
 
 A document question-answering app based on the supplied **Hybrid RAG System with Vector Database and Knowledge Graph** architecture and dark dashboard reference screens. Streamlit handles uploads, chat, and document listings; FastAPI ingests PDF, DOCX, TXT, and Markdown text, stores OpenAI embeddings in persistent Chroma, extracts document concepts into Neo4j, searches both stores, and asks an OpenAI model to answer with source citations.
 
+> **Start here:** The steps below explain how to keep this project on GitHub and run it on Windows. Never upload `.env`, API keys, passwords, your Docker databases, or private source documents to GitHub.
+
+## What this project does
+
+1. You select one to five files (PDF, DOCX, TXT, or Markdown) and click **Index documents**. Uploading is an indexing step; choosing files alone does not index them.
+2. FastAPI extracts readable text, separates it into passages, and requests OpenAI embeddings and concept extraction.
+3. Chroma keeps passages and vectors; Neo4j keeps document, passage, and concept links. Both stores persist in Docker volumes.
+4. In Chat, you search all indexed documents or choose specific ones and ask a question.
+5. The backend retrieves matching passages using vector similarity and graph concepts, ranks them together, asks an OpenAI model for an answer, checks that answer, and returns citations you can inspect.
+
+The name **hybrid** here means *vector retrieval plus knowledge graph retrieval*. This version does **not** implement BM25, web search, cross-encoder reranking, or terabyte-scale processing. It cannot guarantee a 100% correct answer; verify the cited source passage.
+
+### Project folder map
+
+| Path | Purpose | Put on GitHub? |
+| --- | --- | --- |
+| `README.md` | This guide, setup instructions, and project overview | Yes |
+| `docs/architecture.png` | Complete upload and question flow diagram | Yes |
+| `docs/architecture.mmd` | Editable Mermaid source for the diagram | Yes |
+| `frontend/app.py` | Streamlit upload, chat, document, graph UI | Yes |
+| `backend/main.py` | FastAPI routes and input validation | Yes |
+| `backend/service.py` | Ingestion, Neo4j, Chroma, retrieval, answer generation | Yes |
+| `backend/core.py` | Text extraction, chunking, ranking helpers | Yes |
+| `backend/config.py` | Reads environment settings | Yes |
+| `tests/test_core.py` | Checks for extraction and ranking helpers | Yes |
+| `backend/requirements.txt`, `frontend/requirements.txt` | Python dependencies | Yes |
+| `backend/Dockerfile`, `frontend/Dockerfile` | Container build instructions | Yes |
+| `docker-compose.yml` | Local Windows deployment | Yes |
+| `docker-compose.vps.yml`, `deploy/Caddyfile` | VPS with free ports 80/443; Caddy provides HTTPS and login | Yes |
+| `docker-compose.traefik.yml` | VPS with existing Traefik on ports 80/443 | Yes |
+| `.env.example` | Safe configuration template with placeholders | Yes |
+| `.gitignore`, `.dockerignore` | Exclude local secrets and unnecessary files | Yes |
+| `.env`, `.venv/`, `data/`, Docker volumes, private PDFs | Secrets and local data | **No** |
+
+## A to Z: Put the complete project on GitHub (Windows PowerShell)
+
+You need [Git for Windows](https://git-scm.com/downloads/win), a GitHub account, and this ZIP. Complete these steps on your **Windows computer**. If the project is already in a Git repository, read **Updating an existing GitHub repository** below instead of starting another repository.
+
+### Part A — Prepare the local folder
+
+1. Download `Hybrid_RAG_Project.zip` and extract it. Open the extracted **`hybrid-rag`** folder in File Explorer. This folder should contain `README.md`, `.gitignore`, and both Compose files. Enable **View → Show → File name extensions** in Windows if you cannot see `.md`.
+2. In File Explorer, click the folder's address bar, type `powershell`, and press Enter. You should now see a prompt ending in `\hybrid-rag>`.
+3. Check your tools and files:
+
+   ```powershell
+   git --version
+   docker compose version
+   Get-ChildItem -Force
+   ```
+
+   Install or open Docker Desktop later if Docker is not yet available. Do not put your OpenAI key in `README.md` or `.env.example`.
+
+### Part B — Create an empty GitHub repository
+
+4. Sign in at [github.com](https://github.com). Click **+ → New repository**. Enter `Hybrid_RAG_Project` (or another name you choose). Choose **Private** for a first deployment, especially if your documents or future commits might be sensitive. Click **Create repository**.
+5. **Do not** check GitHub's boxes for a new README, `.gitignore`, or license: these files already exist locally. Copy your own repository HTTPS URL, for example `https://github.com/YOUR_USERNAME/Hybrid_RAG_Project.git`. Replace the example URL below with yours.
+
+### Part C — Commit and upload
+
+6. Run these commands in PowerShell, one line at a time. Replace the sample name, email, username, and repository address. Use the email associated with your GitHub commits.
+
+   ```powershell
+   git config --global user.name "YOUR NAME"
+   git config --global user.email "YOUR_EMAIL@example.com"
+   git init
+   git branch -M main
+   git status --short
+git add README.md .gitignore .dockerignore .env.example docker-compose.yml docker-compose.vps.yml docker-compose.traefik.yml backend frontend deploy docs tests
+   git status --short
+   git diff --cached --name-only
+   git commit -m "Add Hybrid RAG project and setup guide"
+   git remote add origin https://github.com/YOUR_USERNAME/Hybrid_RAG_Project.git
+   git push -u origin main
+   ```
+
+   **Before the commit**, inspect `git diff --cached --name-only`. It must show `.env.example` but **must not show `.env`** or private documents. If `.env` appears, stop and run `git restore --staged .env`. GitHub may open a browser sign-in window during the push; complete that sign-in rather than putting a password into the command.
+7. Visit your repository's URL and refresh. Verify that `README.md` is shown on the repository home page and that the architecture picture appears below. Open `docs/architecture.png` and `backend/service.py` to check that the upload included the project, not just the README.
+
+### Updating an existing GitHub repository
+
+If you already have this project's local Git repository, **keep using that folder**. Back up your existing `.env`. Copy the updated `README.md`, `docs/`, `backend/`, `frontend/`, and other changed project files into it; keep any deliberate local deployment settings. In PowerShell from the existing repository:
+
+```powershell
+git status
+git remote -v
+git add README.md docs backend frontend .env.example docker-compose.yml docker-compose.vps.yml docker-compose.traefik.yml deploy .gitignore .dockerignore tests
+git diff --cached --name-only
+git commit -m "Update Hybrid RAG guide and architecture"
+git push
+```
+
+If `git remote -v` is empty, add *your existing repository URL* with `git remote add origin YOUR_REPOSITORY_URL`, then use `git push -u origin main` if your branch is `main`. If `git status` says **nothing to commit**, your local files may not have been copied yet. If Git says **remote origin already exists**, do not run `git remote add origin` again. Do not use `git push --force` to fix an ordinary push error.
+
+### Future changes and recovery
+
+| Goal or symptom | What to do in PowerShell inside the project folder |
+| --- | --- |
+| Check what changed | `git status` |
+| Save your next code or README change | `git add README.md docs backend frontend` → `git commit -m "Describe the change"` → `git push` |
+| Download existing project onto a different PC | `git clone https://github.com/YOUR_USERNAME/Hybrid_RAG_Project.git`; then `cd Hybrid_RAG_Project` and create a fresh `.env` |
+| GitHub says repository not found | Verify your URL, repository name, account access, and `git remote -v` |
+| Push rejected because remote has new commits | First run `git pull --rebase origin main`, resolve any reported conflicts, then `git push` |
+| `.env` appears in `git status` or a commit | Stop before pushing. Keep it ignored; if a real key reached GitHub, revoke and replace the key immediately |
+
+GitHub stores code and documentation; it does **not** run the app. Run Docker locally or deploy on a VPS using the sections below. Uploading the ZIP to a repository is less useful than committing its **extracted files**, because GitHub then displays the README and tracks changes.
+
 ## Start on Windows with Docker Desktop
 
 1. Install and open Docker Desktop; wait until its engine is running. Allocate at least 4 GB of memory to Docker.
@@ -20,7 +126,54 @@ Extract this ZIP to a separate folder. Copy its `backend` and `frontend` folders
 
 PowerShell health check: `Invoke-RestMethod http://localhost:8000/health`. If it fails, inspect `docker compose logs --tail=100 backend neo4j`. Stop services with `docker compose down`; saved indexes remain in volumes. `docker compose down -v` **deletes** both saved databases.
 
-## Publish on a Hostinger Ubuntu VPS with one domain
+## Hostinger VPS with existing Traefik and n8n (raghybrid.sbs)
+
+On the inspected VPS, Traefik already binds ports 80 and 443, has the Docker provider enabled and a `letsencrypt` TLS resolver, and runs in host network mode. The separate n8n container must stay running. Use **`docker-compose.traefik.yml`** for this VPS. Do not run `docker-compose.vps.yml` here because its Caddy container would try to take the same ports. The project starts its own default Docker network; host-networked Traefik reaches the frontend by its container address through the Docker provider. No project database or app ports are published to the internet.
+
+1. Download the current `Hybrid_RAG_Project.zip` to Windows. In PowerShell, change the path if needed and upload it over SSH (enter the VPS root password when requested):
+
+   ```powershell
+   scp "$env:USERPROFILE\Downloads\Hybrid_RAG_Project.zip" root@213.210.211.106:/tmp/Hybrid_RAG_Project.zip
+   ```
+
+2. Open the Hostinger browser terminal or connect by `ssh root@213.210.211.106`. Check available space with `df -h /` and memory with `free -h`. On the inspected VPS, approximately 93 GB of disk and 6.8 GiB of memory were available. In the VPS terminal, unpack the code:
+
+   ```bash
+   mkdir -p /opt/hybrid-rag
+   unzip -o /tmp/Hybrid_RAG_Project.zip -d /opt
+   cd /opt/hybrid-rag
+   ls -a
+   ```
+
+   If `unzip` is missing, run `apt update` and `apt install -y unzip` first. Check that `docker-compose.traefik.yml` exists. Use this guide if the ZIP contains one `hybrid-rag` directory; inspect `unzip -l` first if the archive has been repacked.
+
+3. Create secrets locally on the VPS and edit the configuration:
+
+   ```bash
+   cp .env.example .env
+   chmod 600 .env
+   nano .env
+   ```
+
+   Set `OPENAI_API_KEY` to a valid API platform key, `NEO4J_PASSWORD` to a long unique password, and `RAG_DOMAIN=raghybrid.sbs`. Do not share screenshots of `.env` or the API key. Leave the Caddy-only `RAG_PASSWORD_HASH` setting unused for this deployment. Save nano using Ctrl+O, Enter, Ctrl+X.
+
+4. Generate a website password hash in the VPS terminal using `openssl passwd -apr1`. Type your new login password twice at the prompts. Copy only the resulting hash, which starts `$apr1$`. Edit `.env` again using `nano .env`; set `RAG_BASIC_AUTH='ragadmin:$apr1$YOUR_GENERATED_HASH'`, replacing the example with the **complete** output you copied. Keep the single quotes and record your login password privately. A password hash is not the password itself.
+
+5. Confirm your DNS A record for `raghybrid.sbs` resolves to `213.210.211.106`, and that Hostinger's VPS firewall allows inbound TCP 80 and 443. From `/opt/hybrid-rag`, validate and start the stack:
+
+   ```bash
+   docker compose -f docker-compose.traefik.yml config --quiet
+   docker compose -f docker-compose.traefik.yml up --build -d
+   docker compose -f docker-compose.traefik.yml ps
+   ```
+
+   The first build may take several minutes. Open `https://raghybrid.sbs` and enter username `ragadmin` and your chosen website password. Index a small document, ask a question, and inspect its cited source passages. An answer cannot be guaranteed correct merely because it has citations.
+
+6. For troubleshooting, run `docker compose -f docker-compose.traefik.yml logs --tail=80 frontend backend neo4j` from `/opt/hybrid-rag`, then `docker logs --tail=80 traefik-traefik-1` for routing/certificate errors. If the domain shows a Traefik 404, check the exact domain and labels with `docker inspect` on the frontend container. If the domain shows a 502, check frontend container health and Traefik's route to its Docker address. If a certificate fails, verify DNS, firewall access, and Traefik logs.
+
+To update, back up `.env` and volumes, upload the latest ZIP, extract the project files, and repeat `docker compose -f docker-compose.traefik.yml up --build -d`. Keep `.env` private. Never run `docker compose down -v` during an update; `-v` deletes your Neo4j and Chroma volumes. Do not stop the existing n8n or Traefik containers.
+
+## Publish on a Hostinger Ubuntu VPS with one domain (only when ports 80/443 are free)
 
 These instructions assume you own a domain, have a Hostinger Ubuntu VPS with SSH access, and can install Docker. Use a subdomain such as `rag.example.com` if your main domain already hosts a website. Use the bare domain (`example.com`) if you want the app at the main address. Replace every example domain and IP below with yours. The VPS deployment file is **`docker-compose.vps.yml`**; the normal `docker-compose.yml` is for local development.
 
@@ -74,24 +227,19 @@ If HTTPS fails, check the A record, your VPS firewall rules, whether another web
 
 ## Architecture
 
-```mermaid
-flowchart TD
-  U[Browser] --> S[Streamlit UI]
-  S --> A[FastAPI]
-  A --> P[PDF text and page chunks]
-  P --> E[OpenAI embeddings]
-  P --> X[OpenAI entity extraction]
-  E --> C[(Chroma persistent volume)]
-  X --> N[(Neo4j graph volume)]
-  A --> V[Vector search]
-  A --> G[Graph entity lookup]
-  C --> V
-  N --> G
-  V --> F[Rank fusion]
-  G --> F
-  F --> L[Grounded OpenAI answer]
-  L --> S
-```
+![Hybrid RAG architecture: document indexing and question-answering paths](docs/architecture.png)
+
+The image is stored in `docs/architecture.png`, and its editable flow definition is [docs/architecture.mmd](docs/architecture.mmd). GitHub displays the image automatically from this relative path when both the README and picture are committed. The upload path starts only when you click **Index documents**; the chat path starts when you click **Find answer**.
+
+| Stage | Data going in | Work and result |
+| --- | --- | --- |
+| File upload | 1–5 PDF, DOCX, TXT, MD files | Browser sends files to the FastAPI `/documents` route |
+| Text preparation | File bytes | Backend extracts text, preserves PDF page numbers, and cuts text into passages |
+| Two indexes | Passages | OpenAI embeddings are stored in Chroma; extracted concepts and links are stored in Neo4j |
+| Question | User question, optional selected document IDs | Backend embeds the question and extracts query concepts |
+| Retrieval | Question vector and concepts | Chroma returns similar passages; Neo4j finds passages with matching concepts |
+| Answer | Up to six fused passages | OpenAI drafts and reviews an answer, repairing missing citations if needed |
+| Verification | Answer and cited passage text | Streamlit displays `[S1]` style citations and the **Sources used in this answer** expander |
 
 Each chunk stores the original PDF filename and page in Chroma. Neo4j holds `Document → Chunk → Entity` links and extracted `Entity → Entity` relationships. Retrieval matches vector similarity and question entities; reciprocal rank fusion selects up to six passages. The API and Chat show source badges such as `[S1]`; Chat expands the exact cited passages for verification. Rank scores are fusion scores, **not** calibrated probabilities.
 
