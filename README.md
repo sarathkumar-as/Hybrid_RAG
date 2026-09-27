@@ -1,4 +1,4 @@
-# Atlas Hybrid RAG
+# Hybrid RAG Project
 
 A document question-answering app based on the supplied **Hybrid RAG System with Vector Database and Knowledge Graph** architecture and dark dashboard reference screens. Streamlit handles uploads, chat, and document listings; FastAPI ingests PDF, DOCX, TXT, and Markdown text, stores OpenAI embeddings in persistent Chroma, extracts document concepts into Neo4j, searches both stores, and asks an OpenAI model to answer with source citations.
 
