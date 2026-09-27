@@ -18,19 +18,15 @@ Ask questions about your documents and inspect the passages used to answer them.
 
 For a first test, upload a short, non-sensitive document with a clear fact, then ask a question whose answer appears in that document. AI answers can be wrong; check the source text before relying on one.
 
-## How it works
+## Architecture: from document to answer
 
-```mermaid
-flowchart TD
-    A["Upload documents"] --> B["FastAPI reads and splits text"]
-    B --> C["Chroma stores passages and vectors"]
-    B --> D["Neo4j stores concepts and links"]
-    E["Ask a question"] --> F["Search both stores"]
-    C --> F
-    D --> F
-    F --> G["OpenAI writes an answer with sources"]
-    G --> H["Review the cited passages"]
-```
+![Hybrid RAG architecture showing document indexing, question answering, and source verification](docs/architecture.png)
+
+The figure follows the three actions you take in the app:
+
+1. **Add documents.** Click **Index documents** in the Streamlit website. FastAPI reads the files and splits their text into short passages. Chroma stores passages and OpenAI vectors; Neo4j stores document concepts and their links.
+2. **Ask a question.** FastAPI searches both stores and brings together the most relevant passages. OpenAI uses those passages to draft an answer and check it against the retrieved evidence.
+3. **Check the result.** Read the answer, open **Sources used in this answer**, and compare its claims with the original passages. A citation helps you verify an answer; it does not guarantee that the answer is correct.
 
 | Part | Plain-English role |
 | --- | --- |
@@ -53,14 +49,12 @@ flowchart TD
 | `backend/service.py` | Indexing, retrieval, and answer generation. |
 | `backend/core.py` | Text extraction, chunking, and ranking helpers. |
 | `backend/config.py` | App settings read from the environment. |
-| `docs/architecture.png` | Architecture diagram. |
+| `docs/architecture.png` | Illustrated three-step architecture guide used above. |
 | `tests/test_core.py` | Core logic checks. |
 | `docker-compose.yml` | Base services and local port mappings. |
 | `docker-compose.traefik.yml` | Traefik settings for the existing Hostinger VPS. |
 | `docker-compose.vps.yml`, `deploy/Caddyfile` | Alternative deployment for a VPS where ports 80/443 are free. |
 | `.env.example` | Example setting names; copy to `.env` and replace placeholders. |
-
-![Hybrid RAG architecture](docs/architecture.png)
 
 ## Run locally with Docker
 
