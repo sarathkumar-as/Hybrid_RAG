@@ -113,6 +113,20 @@ def matching_heading_ids(question: str, ids: list[str], documents: list[str]) ->
     return [cid for cid, body in zip(ids, documents) if pattern.search(body)]
 
 
+def citations_valid(answer: str, labels: set[str]) -> bool:
+    """Require known citations on every factual line, including headings."""
+    if not answer.strip():
+        return False
+    lines = [line.strip() for line in answer.splitlines() if line.strip()]
+    if not lines:
+        return False
+    for line in lines:
+        found = set(re.findall(r"\[S\d+\]", line))
+        if not found or not found <= labels:
+            return False
+    return True
+
+
 def fuse(vector_ids: list[str], graph_ids: list[str], limit: int = 6) -> list[tuple[str, float]]:
     scores: dict[str, float] = {}
     for weight, ids in ((1.0, vector_ids), (1.0, graph_ids)):

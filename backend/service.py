@@ -8,7 +8,7 @@ from neo4j import GraphDatabase
 from openai import OpenAI
 
 from . import config
-from .core import clean_entities, document_chunks, fuse, heading_query, matching_heading_ids, parse_json
+from .core import citations_valid, clean_entities, document_chunks, fuse, heading_query, matching_heading_ids, parse_json
 
 log = logging.getLogger(__name__)
 
@@ -67,6 +67,7 @@ class RAGService:
             session.run("MATCH ()-[r:RELATED_TO {doc_id:$id}]->() DELETE r", id=doc_id)
             session.run("MATCH (d:Document {id:$id})-[:HAS_CHUNK]->(c:Chunk) DETACH DELETE c", id=doc_id)
             session.run("MATCH (d:Document {id:$id}) DETACH DELETE d", id=doc_id)
+            session.run("MATCH (c:Chunk {doc_id:$id}) WHERE NOT EXISTS { MATCH (:Document)-[:HAS_CHUNK]->(c) } DETACH DELETE c", id=doc_id)
             session.run("MATCH (e:Entity) WHERE NOT EXISTS { MATCH (e)<-[:MENTIONS]-(:Chunk) } DETACH DELETE e")
         try:
             for start in range(0, len(chunks), 32):
@@ -126,6 +127,33 @@ class RAGService:
             if not entry["filename"].lower().endswith(".pdf"):
                 entry["pages"] = None
         return sorted(documents.values(), key=lambda item: item["filename"].lower())
+
+    def document_passages(self, doc_id: str):
+        records = self.collection.get(where={"doc_id": doc_id}, include=["documents", "metadatas"])
+        if not records["ids"]:
+            raise ValueError("Document not found")
+        passages = [
+            {"page": meta["page"] if meta["filename"].lower().endswith(".pdf") else None,
+             "text": body, "id": cid}
+            for cid, body, meta in zip(records["ids"], records["documents"], records["metadatas"])
+        ]
+        passages.sort(key=lambda item: (item["page"] or 0, int(item["id"].rsplit(":", 1)[-1])))
+        return {"filename": records["metadatas"][0]["filename"], "passages": passages}
+
+    def delete_document(self, doc_id: str):
+        records = self.collection.get(where={"doc_id": doc_id}, include=["metadatas"])
+        if not records["ids"]:
+            raise ValueError("Document not found")
+        # Remove this document's graph links and chunks, then unused concepts.
+        # Concepts mentioned in other documents remain intact.
+        with self.graph.session() as session:
+            session.run("MATCH ()-[r:RELATED_TO {doc_id:$id}]->() DELETE r", id=doc_id)
+            session.run("MATCH (d:Document {id:$id})-[:HAS_CHUNK]->(c:Chunk) DETACH DELETE c", id=doc_id)
+            session.run("MATCH (d:Document {id:$id}) DETACH DELETE d", id=doc_id)
+            session.run("MATCH (c:Chunk {doc_id:$id}) WHERE NOT EXISTS { MATCH (:Document)-[:HAS_CHUNK]->(c) } DETACH DELETE c", id=doc_id)
+            session.run("MATCH (e:Entity) WHERE NOT EXISTS { MATCH (e)<-[:MENTIONS]-(:Chunk) } DETACH DELETE e")
+        self.collection.delete(ids=records["ids"])
+        return {"document_id": doc_id, "filename": records["metadatas"][0]["filename"]}
 
     def graph_summary(self):
         with self.graph.session() as session:
@@ -257,9 +285,7 @@ class RAGService:
         valid = {f"[{source['label']}]" for source in sources}
         abstains = answer.lower().startswith(("i cannot find", "i cannot confirm"))
         cited = set(re.findall(r"\[S\d+\]", answer))
-        uncited_bullets = any(re.match(r"\s*[-*]\s+", line) and not re.search(r"\[S\d+\]", line)
-                              for line in answer.splitlines())
-        if not abstains and (not cited or cited - valid or uncited_bullets):
+        if not abstains and not citations_valid(answer, valid):
             # Missing citation syntax alone is not evidence that the reviewed
             # answer is unsupported. Ask the editor to repair references while
             # forbidding new factual claims, then validate its output again.
@@ -272,9 +298,7 @@ class RAGService:
             answer = fixed.strip() if isinstance(fixed, str) and fixed.strip() else "I cannot confirm the answer from the uploaded documents."
             cited = set(re.findall(r"\[S\d+\]", answer))
             abstains = answer.lower().startswith(("i cannot find", "i cannot confirm"))
-            uncited_bullets = any(re.match(r"\s*[-*]\s+", line) and not re.search(r"\[S\d+\]", line)
-                                  for line in answer.splitlines())
-        if not abstains and (not cited or cited - valid or uncited_bullets):
+        if not abstains and not citations_valid(answer, valid):
             answer = "I cannot confirm the answer from the uploaded documents. Please ask a more specific question."
             cited = set()
         # Only return passages actually cited, so the UI never implies unused

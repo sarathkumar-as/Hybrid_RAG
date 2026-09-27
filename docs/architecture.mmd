@@ -1,0 +1,33 @@
+flowchart TB
+  User["Browser user"] --> UI["Streamlit UI"]
+  UI -->|"Upload files / ask question"| API["FastAPI backend"]
+
+  subgraph Ingest["Indexing: click Index documents"]
+    Parse["Extract PDF, DOCX, TXT, MD text"] --> Chunk["Passages and document metadata"]
+    Chunk --> Embed["OpenAI embeddings"]
+    Chunk --> Entities["OpenAI concept extraction"]
+    Embed --> Chroma[("Chroma persistent vector index")]
+    Entities --> Neo4j[("Neo4j document and concept graph")]
+  end
+
+  subgraph Answer["Question answering: one or more indexed documents"]
+    Select["Select documents or search all"] --> Vector["Vector similarity search"]
+    Select --> Graph["Graph concept lookup"]
+    Vector --> Fusion["Rank fusion: up to 6 passages"]
+    Graph --> Fusion
+    Fusion --> Draft["OpenAI cited draft"]
+    Draft --> Review["Evidence review and citation repair if needed"]
+  end
+
+  API --> Parse
+  API --> Select
+  Chroma --> Vector
+  Neo4j --> Graph
+  Review --> UI
+
+  subgraph Run["Where containers run"]
+    Local["Windows Docker Desktop: localhost:8501"]
+    VPS["Hostinger VPS: Caddy HTTPS and shared login"]
+  end
+  Local -.-> UI
+  VPS -.-> UI

@@ -10,4 +10,4 @@ CHROMA_PATH = os.getenv("CHROMA_PATH", "/data/chroma")
 MAX_UPLOAD_MB = int(os.getenv("MAX_UPLOAD_MB", "20"))
 MAX_PAGES = int(os.getenv("MAX_PAGES", "100"))
 MAX_CHUNKS = int(os.getenv("MAX_CHUNKS", "150"))
-
+ADMIN_DELETE_TOKEN = os.getenv("ADMIN_DELETE_TOKEN", "")

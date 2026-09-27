@@ -4,7 +4,24 @@ from pypdf import PdfWriter
 
 from docx import Document
 
-from backend.core import clean_entities, document_chunks, fuse, pdf_chunks
+from backend.core import citations_valid, clean_entities, document_chunks, fuse, heading_query, matching_heading_ids, pdf_chunks
+
+
+def test_every_factual_line_requires_a_real_source():
+    labels = {"[S1]", "[S2]"}
+    assert citations_valid("- Vector search [S1]\n- Graph search [S2]", labels)
+    assert not citations_valid("- Vector search [S1]\n- Invented claim", labels)
+    assert not citations_valid("Invented claim [S9]", labels)
+    assert not citations_valid("# Unsupported heading\nSupported detail [S1]", labels)
+
+
+def test_short_heading_prioritizes_actual_section():
+    assert heading_query("Backend:") == "Backend"
+    assert heading_query("What does the backend do?") is None
+    ids = ["unrelated", "answer"]
+    documents = ["Frontend: renders pages. Backend mentioned later.",
+                 "Backend:\n- Node.js + TypeScript\n- NestJS\nFrontend: UI"]
+    assert matching_heading_ids("Backend:", ids, documents) == ["answer"]
 
 
 def test_ranking_rewards_both_retrievers():

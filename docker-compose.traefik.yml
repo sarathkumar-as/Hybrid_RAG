@@ -45,8 +45,6 @@ services:
       - "traefik.http.routers.hybrid-rag.rule=Host(`${RAG_DOMAIN:?Set RAG_DOMAIN in .env}`)"
       - "traefik.http.routers.hybrid-rag.entrypoints=websecure"
       - "traefik.http.routers.hybrid-rag.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.hybrid-rag.middlewares=hybrid-rag-auth"
-      - "traefik.http.middlewares.hybrid-rag-auth.basicauth.users=${RAG_BASIC_AUTH:?Set RAG_BASIC_AUTH in .env}"
       - "traefik.http.services.hybrid-rag.loadbalancer.server.port=8501"
     restart: unless-stopped
 

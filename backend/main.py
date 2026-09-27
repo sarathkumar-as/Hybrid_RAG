@@ -1,8 +1,9 @@
 import logging
+import secrets
 from contextlib import asynccontextmanager
 from typing import Literal
 
-from fastapi import FastAPI, File, HTTPException, Query, UploadFile
+from fastapi import FastAPI, File, Header, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
@@ -35,6 +36,13 @@ def ready():
     return service
 
 
+def require_delete_token(token: str | None):
+    if not config.ADMIN_DELETE_TOKEN:
+        raise HTTPException(403, "Deletion is disabled. Configure ADMIN_DELETE_TOKEN in the private .env file.")
+    if not token or not secrets.compare_digest(token, config.ADMIN_DELETE_TOKEN):
+        raise HTTPException(403, "Invalid admin deletion secret.")
+
+
 class Question(BaseModel):
     question: str = Field(min_length=3, max_length=2000)
     document_ids: list[str] | None = Field(default=None, max_length=100)
@@ -59,6 +67,46 @@ async def list_documents():
     except Exception:
         logger.exception("Document listing failed")
         raise HTTPException(502, "Could not list documents. Check backend logs.")
+
+
+@app.get("/documents/{document_id}/passages")
+async def get_document_passages(document_id: str):
+    worker = ready()
+    try:
+        return await run_in_threadpool(worker.document_passages, document_id)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc))
+    except Exception:
+        logger.exception("Document passage lookup failed")
+        raise HTTPException(502, "Could not open indexed passages.")
+
+
+@app.delete("/documents")
+async def delete_all_documents(x_delete_token: str | None = Header(default=None)):
+    require_delete_token(x_delete_token)
+    worker = ready()
+    try:
+        docs = await run_in_threadpool(worker.list_documents)
+        deleted = []
+        for doc in docs:
+            deleted.append(await run_in_threadpool(worker.delete_document, doc["document_id"]))
+        return {"deleted": deleted}
+    except Exception:
+        logger.exception("Delete all documents failed")
+        raise HTTPException(502, "Deletion failed; check the document list and backend logs before retrying.")
+
+
+@app.delete("/documents/{document_id}")
+async def delete_document(document_id: str, x_delete_token: str | None = Header(default=None)):
+    require_delete_token(x_delete_token)
+    worker = ready()
+    try:
+        return await run_in_threadpool(worker.delete_document, document_id)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc))
+    except Exception:
+        logger.exception("Document deletion failed")
+        raise HTTPException(502, "Deletion failed; check backend logs.")
 
 
 @app.get("/knowledge-graph/summary")
@@ -106,7 +154,9 @@ async def documents(files: list[UploadFile] = File(...)):
     worker = ready()
     if not 1 <= len(files) <= 5:
         raise HTTPException(400, "Upload 1 to 5 PDFs at a time.")
-    outputs = []
+    # Validate the whole batch before changing either index. A bad second
+    # file must not cause the first file to be stored silently.
+    prepared = []
     for file in files:
         name = (file.filename or "document.pdf").split("/")[-1].split("\\")[-1][:120]
         data = await file.read(config.MAX_UPLOAD_MB * 1024 * 1024 + 1)
@@ -115,6 +165,9 @@ async def documents(files: list[UploadFile] = File(...)):
             raise HTTPException(400, f"{name}: Supported formats are PDF, DOCX, TXT, and Markdown.")
         if len(data) > config.MAX_UPLOAD_MB * 1024 * 1024:
             raise HTTPException(413, f"{name}: File exceeds {config.MAX_UPLOAD_MB} MB.")
+        prepared.append((data, name))
+    outputs = []
+    for data, name in prepared:
         try:
             outputs.append(await run_in_threadpool(worker.ingest, data, name))
         except ValueError as exc:

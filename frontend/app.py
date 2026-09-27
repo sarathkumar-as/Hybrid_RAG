@@ -13,6 +13,9 @@ h1,h2,h3 {letter-spacing:-.025em}
 .hero {padding:10px 0 18px}
 .hero h1 {font-size:2.25rem;margin:0;color:#f8fafc}
 .hero p {margin:7px 0 0;color:#94a3b8}
+.workflow {background:#172238;border:1px solid #34475f;border-radius:14px;padding:16px 19px;margin:12px 0 18px;color:#dceafb}
+.workflow strong {color:#f7fafc}
+.workflow small {color:#adc0d6}
 .feature-card {background:#15283f;border:1px solid #254867;border-radius:16px;padding:20px 22px;color:#dbeafe}
 .feature-card h3 {color:#58aaff;margin:0 0 14px}
 .feature-card strong {color:#f1f5f9}
@@ -77,14 +80,14 @@ with st.sidebar:
         st.write(f"OpenAI: {'Key configured; API calls not checked' if healthy else 'Not verified'}")
         st.caption("Your API key stays in the server .env file. It is never entered in this browser.")
     st.divider()
-    st.markdown("### 📥 Upload documents")
+    st.markdown("### 1 · Add your documents")
     st.caption("PDF, DOCX, TXT, and Markdown (.md). Up to 5 files per upload, 20 MB each.")
     files = st.file_uploader("Choose files", type=["pdf", "docx", "txt", "md"], accept_multiple_files=True, label_visibility="collapsed")
     if st.button("Index documents", type="primary", use_container_width=True, disabled=not healthy or not files):
         if len(files) > 5:
             st.error("Select at most five files per upload.")
         else:
-            with st.spinner("Reading documents and building both search indexes…"):
+            with st.spinner("Indexing: reading text, creating vector search, and linking concepts. Keep this page open…"):
                 try:
                     response = requests.post(
                         f"{API}/documents",
@@ -109,7 +112,7 @@ with st.sidebar:
     if st.session_state.get("upload_message"):
         st.success("Indexed: " + st.session_state.pop("upload_message"))
     st.divider()
-    st.markdown("### 📊 Latest indexing run")
+    st.markdown("### Last upload in this browser")
     if healthy:
         counts = st.session_state.latest_index_counts
         c1, c2 = st.columns(2)
@@ -121,11 +124,16 @@ with st.sidebar:
         st.caption("Starts at 0 in each new browser session. Shows the most recently indexed files; saved knowledge base totals remain in the Knowledge Graph tab.")
     else:
         st.info("Indexing counts unavailable until backend connects.")
-    with st.expander("How it works"):
-        st.markdown("1. Upload a document.\n2. Text becomes vector embeddings and graph concepts.\n3. Ask a question.\n4. Browse source evidence in the Knowledge Graph tab.")
+    with st.expander("What happens when I click Index documents?"):
+        st.markdown("1. Read text from each file.\n2. Store searchable passages and vectors in Chroma.\n3. Connect passages and concepts in Neo4j.\n4. Show counts after the upload finishes. Then ask in Chat and check the cited text.")
     st.caption("Scanned PDFs need OCR. Uploaded document text is sent to the configured OpenAI API.")
 
-st.markdown('<div class="hero"><h1>🧠 Hybrid RAG Chat System</h1><p>Ask grounded questions across your documents with vector and knowledge graph retrieval.</p></div>', unsafe_allow_html=True)
+st.markdown('<div class="hero"><h1>Ask your documents</h1><p>Upload a file, ask a question, then check the answer against its source.</p></div>', unsafe_allow_html=True)
+st.markdown('<div class="workflow"><strong>1 Upload and index</strong> &nbsp; → &nbsp; <strong>2 Ask in Chat</strong> &nbsp; → &nbsp; <strong>3 Read the cited passage</strong><br><small>Search uses saved text in Chroma and document connections in Neo4j. Open the Documents and Knowledge Graph tabs to inspect what was indexed.</small></div>', unsafe_allow_html=True)
+if healthy:
+    st.caption(f"✅ Backend ready · {len(indexed_documents)} saved documents · {indexed} searchable passages")
+else:
+    st.warning("Backend unavailable. Check the container logs and refresh this page.")
 chat_tab, documents_tab, graph_tab = st.tabs(["💬 Chat", "📁 Documents", "🕸️ Knowledge Graph"])
 
 with chat_tab:
@@ -134,9 +142,9 @@ with chat_tab:
     if not st.session_state.chat_history:
         left, right = st.columns([1.4, 1], gap="large")
         with left:
-            st.markdown('<div class="step-card"><h2>📄 Getting started</h2><ol><li>Upload a document in the sidebar.</li><li>Wait for vector and graph indexing.</li><li>Ask a question. Explore graph evidence in the Knowledge Graph tab.</li></ol><h3>Supported formats</h3><p>📄 PDF &nbsp; 📝 DOCX &nbsp; 📃 TXT &nbsp; 📁 Markdown</p></div>', unsafe_allow_html=True)
+            st.markdown('<div class="step-card"><h2>Start with one document</h2><ol><li>Choose a PDF, DOCX, TXT or MD file in the sidebar.</li><li>Click <strong>Index documents</strong> and wait for the result.</li><li>Ask a question whose answer appears in the file.</li><li>Expand <strong>Sources used in this answer</strong> to check the exact text.</li></ol></div>', unsafe_allow_html=True)
         with right:
-            st.markdown('<div class="feature-card"><h3>✨ Features</h3><strong>Hybrid retrieval</strong><ul><li>Semantic vector search</li><li>Knowledge graph concept lookup</li><li>Combined passage ranking</li></ul><strong>Grounded answers</strong><ul><li>Answers use retrieved document text</li><li>Source evidence in Knowledge Graph</li><li>Retrieval counts available per answer</li></ul></div>', unsafe_allow_html=True)
+            st.markdown('<div class="feature-card"><h3>What you can check</h3><ul><li><strong>Documents:</strong> saved files and extracted passages.</li><li><strong>Knowledge Graph:</strong> stored concepts and their evidence.</li><li><strong>Chat:</strong> cited passages behind an answer.</li></ul><p>AI can be mistaken. Verify important answers with their source passages.</p></div>', unsafe_allow_html=True)
     else:
         head, action = st.columns([5, 1])
         with head:
@@ -190,7 +198,9 @@ with chat_tab:
 
 with documents_tab:
     st.markdown("### Indexed documents")
-    st.caption("This list reflects the persistent vector index. Reupload the exact same file to refresh it.")
+    if st.session_state.pop("delete_message", None):
+        st.success("Saved document list updated.")
+    st.caption("Open the indexed text or remove saved documents. Original PDF/DOCX files are not stored; Open shows extracted passages.")
     if healthy:
         try:
             response = requests.get(f"{API}/documents", timeout=15)
@@ -198,12 +208,62 @@ with documents_tab:
                 documents = response.json()["documents"]
                 if not documents:
                     st.info("No documents indexed yet. Upload a file in the sidebar.")
-                for doc in documents:
-                    with st.container(border=True):
-                        a, b = st.columns([4, 1])
-                        a.markdown(f"**📄 {doc['filename']}**")
-                        a.caption("PDF pages: " + str(doc["pages"]) if doc["pages"] is not None else "Text document")
-                        b.metric("Passages", doc["chunks"])
+                else:
+                    open_tab, delete_tab = st.tabs(["📖 Open indexed text", "🗑️ Delete files"])
+                    choices = {f"{doc['filename']} ({doc['document_id'][:8]})": doc for doc in documents}
+                    with open_tab:
+                        selected_name = st.selectbox("Choose a saved document", choices, key="open_saved_document")
+                        selected = choices[selected_name]
+                        st.caption(f"{selected['chunks']} passages" + (f" · {selected['pages']} PDF pages" if selected["pages"] else ""))
+                        if st.button("Open indexed text"):
+                            st.session_state.open_passages_id = selected["document_id"]
+                        if st.session_state.get("open_passages_id") == selected["document_id"]:
+                            try:
+                                opened = requests.get(f"{API}/documents/{selected['document_id']}/passages", timeout=30)
+                                if opened.ok:
+                                    for number, passage in enumerate(opened.json()["passages"], 1):
+                                        title = f"Passage {number}" + (f" · page {passage['page']}" if passage["page"] else "")
+                                        with st.expander(title):
+                                            st.text(passage["text"])
+                                else:
+                                    st.error(request_error(opened))
+                            except requests.RequestException as exc:
+                                st.error(f"Could not open indexed text: {exc}")
+                    with delete_tab:
+                        st.caption("Deleting removes indexed text from Chroma and its links from Neo4j. This action cannot be undone without reuploading the document.")
+                        target_name = st.selectbox("Choose a document to delete", choices, key="delete_saved_document")
+                        target = choices[target_name]
+                        admin_secret = st.text_input("Admin deletion secret", type="password", key="admin_delete_secret")
+                        confirm_one = st.checkbox(f"Yes, delete {target['filename']}", key="confirm_one_delete")
+                        if st.button("Delete selected document", disabled=not confirm_one or not admin_secret):
+                            try:
+                                deleted = requests.delete(f"{API}/documents/{target['document_id']}",
+                                                          headers={"X-Delete-Token": admin_secret}, timeout=60)
+                                if deleted.ok:
+                                    st.session_state.pop("open_passages_id", None)
+                                    st.session_state.chat_history = []
+                                    st.session_state.delete_message = True
+                                    st.rerun()
+                                else:
+                                    st.error(request_error(deleted))
+                            except requests.RequestException as exc:
+                                st.error(f"Could not delete document: {exc}")
+                        st.divider()
+                        st.markdown("#### Clear all saved documents")
+                        clear_confirmation = st.text_input("Type CLEAR ALL to confirm", key="confirm_all_delete")
+                        if st.button("Clear all saved documents", disabled=clear_confirmation != "CLEAR ALL" or not admin_secret):
+                            try:
+                                deleted = requests.delete(f"{API}/documents", headers={"X-Delete-Token": admin_secret}, timeout=180)
+                                if deleted.ok:
+                                    st.session_state.pop("open_passages_id", None)
+                                    st.session_state.chat_history = []
+                                    st.session_state.latest_index_counts = {"documents": 0, "chunks": 0, "entities": 0, "relationships": 0}
+                                    st.session_state.delete_message = True
+                                    st.rerun()
+                                else:
+                                    st.error(request_error(deleted))
+                            except requests.RequestException as exc:
+                                st.error(f"Could not clear saved documents: {exc}")
             else:
                 st.error(request_error(response))
         except requests.RequestException as exc:

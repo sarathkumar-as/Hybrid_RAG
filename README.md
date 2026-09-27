@@ -1,147 +1,110 @@
-# Hybrid RAG Chat System
+# Hybrid RAG — ask questions about your documents
 
-Ask questions about your documents and inspect the passages used to answer them. The app combines **vector search** with a **knowledge graph**, then uses OpenAI to write an answer with source references.
+Upload a PDF, Word, text, or Markdown file. Ask a question in everyday language. The app finds passages and shows sources alongside its answer so you can check the original text.
 
-**Live site:** [raghybrid.sbs](https://raghybrid.sbs)  
-**Source code:** [Hybrid_RAG on GitHub](https://github.com/sarathkumar-as/Hybrid_RAG)
+**Website:** https://raghybrid.sbs · **Repository:** https://github.com/sarathkumar-as/Hybrid_RAG_Project
 
-> The website is publicly accessible without a login prompt. Anyone with the address can use it and may see indexed content. Upload only material you are comfortable making available on this shared app. OpenAI API usage may incur charges.
+> AI answers can be wrong. Check the cited passage. Scanned PDFs need OCR before upload. The public website has no separate user accounts.
 
-## Start here: use the app
+## Use the app
 
-1. Open [https://raghybrid.sbs](https://raghybrid.sbs).
-2. In the sidebar, choose **PDF**, **DOCX**, **TXT**, or **Markdown** files. Select up to **five files per upload**, each up to **20 MB** by default.
-3. Click **Index documents**. Choosing a file alone does not store it. Wait for the success message.
-4. Open **Chat**, choose all documents or specific documents, enter a question, and click **Find answer**.
-5. Open **Sources used in this answer** to check the passages that support the answer.
-6. Use **Documents** to see indexed files and **Knowledge Graph** to browse concepts and links.
+1. Open the website or start the project locally using the steps below.
+2. In the left sidebar, choose up to five files and click **Index documents**. Selecting a file alone does not save it.
+3. Wait for indexing to finish. **Latest indexing run** starts at zero per browser session and updates after a successful upload. **Knowledge Graph** shows saved totals across sessions.
+4. In **Chat**, ask a specific question. Optionally select which documents to search.
+5. Expand **Sources used in this answer** and check the passages yourself.
+6. In **Documents**, open extracted text or delete an index. Deletion requires a separate administrator secret; ordinary visitors can browse and ask without a password.
 
-For a first test, upload a short, non-sensitive document with a clear fact, then ask a question whose answer appears in that document. AI answers can be wrong; check the source text before relying on one.
+## Architecture
 
-## Architecture: from document to answer
+![File indexing and cited question answering](docs/architecture.png)
 
-![Hybrid RAG architecture showing document indexing, question answering, and source verification](docs/architecture.png)
+| Stage | Component | Result |
+| --- | --- | --- |
+| Upload | Streamlit → FastAPI | Sends PDF, DOCX, TXT, or Markdown |
+| Prepare | Backend | Extracts text and makes passages, retaining PDF page numbers |
+| Index | OpenAI + Chroma | Embeds passages and stores their vectors |
+| Connect | OpenAI + Neo4j | Extracts concepts and saves document/passage/concept links |
+| Retrieve | Chroma + Neo4j | Finds vector and concept matches and combines rankings |
+| Answer | OpenAI + Streamlit | Drafts and reviews an answer and displays cited passages |
 
-The figure follows the three actions you take in the app:
+[Editable diagram](docs/architecture.mmd). Citations identify the passage used; they do not guarantee a claim is true. Docker volumes retain indexed data after container restarts.
 
-1. **Add documents.** Click **Index documents** in the Streamlit website. FastAPI reads the files and splits their text into short passages. Chroma stores passages and OpenAI vectors; Neo4j stores document concepts and their links.
-2. **Ask a question.** FastAPI searches both stores and brings together the most relevant passages. OpenAI uses those passages to draft an answer and check it against the retrieved evidence.
-3. **Check the result.** Read the answer, open **Sources used in this answer**, and compare its claims with the original passages. A citation helps you verify an answer; it does not guarantee that the answer is correct.
+## Project files
 
-| Part | Plain-English role |
+| Path | Purpose |
 | --- | --- |
-| Streamlit frontend | The page for uploads, questions, documents, and graph browsing. |
-| FastAPI backend | Reads documents, searches stored information, and prepares answers. |
-| Chroma | Stores document passages and vector embeddings for similarity search. |
-| Neo4j | Stores documents, passages, concepts, and their links. |
-| OpenAI API | Creates embeddings and helps produce answers. Requires a separate API key and billing. |
-| Docker Compose | Runs the app services together. |
-| Traefik | Connects the public HTTPS domain to the frontend on the existing VPS. |
+| `frontend/app.py` | Upload, chat, documents, graph browser |
+| `backend/main.py` | FastAPI routes and validation |
+| `backend/service.py` | Indexing, retrieval, answer review, deletion |
+| `backend/core.py` | Extraction, chunking, ranking, citation checks |
+| `tests/`, `.github/workflows/checks.yml` | Focused checks and automatic GitHub test run |
+| `docker-compose.yml` | Local development |
+| `docker-compose.traefik.yml` | Existing Traefik VPS deployment |
+| `docker-compose.vps.yml`, `deploy/Caddyfile` | Alternative VPS setup when ports 80/443 are free |
+| `.env.example` | Configuration template; copy to private `.env` |
 
-**Hybrid** in this version means vector search **plus** knowledge graph retrieval. The supplied code does not implement BM25, live web search, cross-encoder reranking, or terabyte-scale ingestion.
+## Start locally in VS Code (Windows)
 
-## Project folders
+You need Docker Desktop, VS Code, and a valid OpenAI API key. API use is billed separately from a ChatGPT subscription.
 
-| File or folder | What it contains |
-| --- | --- |
-| `frontend/app.py` | Streamlit interface. |
-| `backend/main.py` | FastAPI routes for uploads, questions, health, and graph data. |
-| `backend/service.py` | Indexing, retrieval, and answer generation. |
-| `backend/core.py` | Text extraction, chunking, and ranking helpers. |
-| `backend/config.py` | App settings read from the environment. |
-| `docs/architecture.png` | Illustrated three-step architecture guide used above. |
-| `tests/test_core.py` | Core logic checks. |
-| `docker-compose.yml` | Base services and local port mappings. |
-| `docker-compose.traefik.yml` | Traefik settings for the existing Hostinger VPS. |
-| `docker-compose.vps.yml`, `deploy/Caddyfile` | Alternative deployment for a VPS where ports 80/443 are free. |
-| `.env.example` | Example setting names; copy to `.env` and replace placeholders. |
+1. In VS Code, open the folder containing `docker-compose.yml`.
+2. Start Docker Desktop. Open **Terminal → New Terminal**; these commands run in **PowerShell on your computer**.
+3. Run `Copy-Item .env.example .env`.
+4. Edit `.env`. Set `OPENAI_API_KEY` and a strong `NEO4J_PASSWORD`. Set a separate long `ADMIN_DELETE_TOKEN` if you want to use Delete. Keep `.env` private.
+5. Run `docker compose up -d --build` and then `docker compose ps`. Wait until Neo4j is healthy.
+6. Open http://localhost:8501. Index a small test file, ask a question, and inspect its cited passage.
 
-## Run locally with Docker
+For errors run `docker compose logs --tail=100 backend frontend neo4j`. Stop with `docker compose down`. **Do not run `down -v` during an update**: it removes saved databases.
 
-These commands run from the project root: the folder containing `docker-compose.yml`.
+## Upload updates to GitHub
 
-1. Install Docker Desktop or Docker Engine with Compose, then download or clone this repository.
-2. Copy `.env.example` to `.env`. On Windows PowerShell use `Copy-Item .env.example .env`; on Linux/macOS use `cp .env.example .env`.
-3. In `.env`, set at least `OPENAI_API_KEY` and a strong `NEO4J_PASSWORD`. Keep `.env` private.
-4. Start the app:
+In the **existing** project folder in VS Code PowerShell, after copying updated files into it:
 
-   ```bash
-   docker compose up --build -d
-   docker compose ps
-   ```
-
-5. Open [http://localhost:8501](http://localhost:8501), index a test document, and ask a question.
-6. If it does not start, run `docker compose logs --tail=80 backend frontend neo4j`.
-
-The local backend health endpoint is `http://localhost:8000/health` where the base Compose file publishes port 8000. The initial build needs internet access and can take several minutes.
-
-## Current Hostinger VPS deployment
-
-The current server uses **Traefik** for HTTPS on `raghybrid.sbs`, and Traefik also serves **n8n**. The RAG services run under Compose project name **`hybrid-rag`** in `/opt/hybrid-rag`. Use the base Compose file together with its Traefik override. The Caddy deployment is a different option and must not be started alongside the existing Traefik on ports 80/443.
-
-The deployed frontend's port 8501 is bound to `127.0.0.1`, so public visitors use [https://raghybrid.sbs](https://raghybrid.sbs) rather than the server IP and port. The Traefik basic-auth labels were removed for this public site. The server's private `.env` contains `RAG_DOMAIN=raghybrid.sbs` (hostname only; no `https://` or trailing slash).
-
-### Update the code on the VPS
-
-The repository must already be cloned at `/opt/hybrid-rag`. For a private repository, Git over HTTPS may request a personal access token instead of a GitHub password. Keep that token private.
-
-1. Connect to the VPS and enter the project folder:
-
-   ```bash
-   cd /opt/hybrid-rag
-   git status --short
-   ```
-
-2. Check any local changes before pulling. In particular, the **live** `docker-compose.yml` and `docker-compose.traefik.yml` contain VPS-specific edits; preserve them when updating from GitHub. Back up `.env` and the Docker volumes before a significant update.
-3. Pull new code only after resolving local changes: `git pull --ff-only`. Do not overwrite the VPS files blindly.
-4. Verify the Compose configuration without printing private values:
-
-   ```bash
-   docker compose -p hybrid-rag -f docker-compose.yml -f docker-compose.traefik.yml config --quiet
-   ```
-
-5. Rebuild and apply an **app code update** when ready:
-
-   ```bash
-   docker compose -p hybrid-rag -f docker-compose.yml -f docker-compose.traefik.yml up -d --build
-   docker compose -p hybrid-rag -f docker-compose.yml -f docker-compose.traefik.yml ps
-   ```
-
-   For a frontend configuration change that does not require a rebuild, update only the frontend with `docker compose -p hybrid-rag -f docker-compose.yml -f docker-compose.traefik.yml up -d --no-deps --no-build frontend`.
-
-**Do not run `docker compose down -v`** during updates: it deletes the saved Neo4j and Chroma volumes. Do not stop the separate n8n or Traefik services. Never commit `.env`, API keys, passwords, private documents, or database files to GitHub.
-
-### Check the deployment
-
-```bash
-docker ps --filter name=hybrid-rag --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
-curl -s -o /dev/null -w 'HTTP status: %{http_code}\n' https://raghybrid.sbs
-docker compose -p hybrid-rag -f docker-compose.yml -f docker-compose.traefik.yml logs --tail=60 frontend backend
+```powershell
+git status
+git add README.md QUALITY_CHECK.md .github backend frontend tests docs .env.example docker-compose.traefik.yml
+git diff --cached --name-only
+git commit -m "Improve evidence checks and project guide"
+git pull --rebase origin main
+git push origin main
 ```
 
-A `200` HTTP result means the homepage responded; it does not prove document indexing or answers work. Verify those features with a non-sensitive sample file in a fresh browser window.
+Check staged names before committing. Never upload `.env`, API keys, private documents, or data volumes. Resolve reported merge conflicts before pushing. Do not force push.
 
-| Symptom | First check |
-| --- | --- |
-| Site returns `404` | Ensure `RAG_DOMAIN` is exactly `raghybrid.sbs` and inspect the frontend Traefik `Host(...)` label. |
-| Site returns `502` | Check whether the frontend is running and read Traefik logs. |
-| Upload or question fails | Check backend and Neo4j status and backend logs. Verify the API key privately. |
-| Browser asks for a username/password | Check whether the RAG router's Traefik basic-auth middleware was added back. |
+## Deploy updates to the existing Hostinger VPS
 
-## Limits and data handling
+The current website uses Traefik for HTTPS and has no website login. The deletion secret remains private. The VPS also runs other services: keep its existing proxy setup, Compose edits, `.env`, and Docker volumes.
 
-- By default, uploads are limited to five files per request and 20 MB per file; PDFs are also limited by `MAX_PAGES=100` and `MAX_CHUNKS=150`.
-- Scanned PDFs need OCR before this app can read their text. Complex tables and multi-column layouts may extract imperfectly.
-- Extracted passages, vectors, and graph data persist in Docker volumes. The starter app has no per-user document separation or document-deletion interface.
-- The backend uses OpenAI services for indexing and answering. A ChatGPT subscription does not supply API credits.
-- The application is a starter implementation. Test with small documents first and verify every answer against its cited sources.
-
-## Developer check
-
-From the project root with Python dependencies installed:
+1. Push updated code to GitHub and check that the files appear there.
+2. Open the **Hostinger VPS terminal** (the following commands run there, not in Windows PowerShell) and run `cd /opt/hybrid-rag`.
+3. Check `git status` and run `git fetch origin main`. Review local changes; update application files while preserving VPS Compose settings and `.env`.
+4. Put a long `ADMIN_DELETE_TOKEN` in the VPS's private `.env` if you need administrator deletion. Never paste the token into GitHub or a screenshot.
+5. Validate and rebuild the app:
 
 ```bash
-python -m pytest -q
+docker compose -p hybrid-rag -f docker-compose.yml -f docker-compose.traefik.yml config --quiet
+docker compose -p hybrid-rag -f docker-compose.yml -f docker-compose.traefik.yml up -d --no-deps --build backend frontend
+docker compose -p hybrid-rag -f docker-compose.yml -f docker-compose.traefik.yml ps
 ```
 
-The tests cover local core logic. Full indexing and answering also require Docker, Neo4j, and a valid OpenAI API key.
+6. Refresh https://raghybrid.sbs. Index a **test** document and verify an answer against its source. For errors, run `docker compose -p hybrid-rag -f docker-compose.yml -f docker-compose.traefik.yml logs --tail=100 backend frontend neo4j`.
+
+The checked-in Traefik configuration is an example; keep VPS-specific networking edits. An archive does not deploy itself to the live website.
+
+## API and limits
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /health` | Readiness and indexed passage count |
+| `POST /documents`, `GET /documents` | Index and list documents |
+| `GET /documents/{id}/passages` | Show extracted text, not the original file |
+| `DELETE /documents/{id}`, `DELETE /documents` | Remove indexes; require `X-Delete-Token` matching private `ADMIN_DELETE_TOKEN` |
+| `POST /ask` | Cited answer and retrieval details |
+| `GET /knowledge-graph/summary`, `/entities`, `/relationships`, `/links` | Explore graph records |
+
+Default limits: five files per request, 20 MB per file, 100 PDF pages, 150 passages per file. TXT/Markdown must be UTF-8. OCR is not included. Original files are processed in memory; extracted text and vectors persist in Docker volumes. Anyone who accesses the public website can see indexed passages and upload documents; there is no per-user isolation. Chroma and Neo4j are separate stores: a failure during reindexing or deletion may require reuploading the affected document. Back up volumes before major upgrades.
+
+## Verification
+
+With Python 3.11 and dependencies installed, run `python -m pytest -q` from the project folder. Full integration checks also need Neo4j, a valid OpenAI key, and a test document. See [QUALITY_CHECK.md](QUALITY_CHECK.md) for repeatable manual checks and test limits. A screenshot score is subjective; review working behavior, test results, and cited answers to assess this project.
