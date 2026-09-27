@@ -1,0 +1,55 @@
+name: hybrid_rag
+
+# For a VPS where an existing Traefik container already owns ports 80 and 443.
+# Traefik must have the Docker provider enabled and use a TLS resolver named letsencrypt.
+services:
+  neo4j:
+    image: neo4j:5.26-community
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:?Set NEO4J_PASSWORD in .env}
+      NEO4J_server_memory_heap_initial__size: 256m
+      NEO4J_server_memory_heap_max__size: 512m
+    volumes:
+      - neo4j_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p \"$${NEO4J_AUTH#neo4j/}\" 'RETURN 1' || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 12
+    restart: unless-stopped
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file: .env
+    environment:
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: neo4j
+      CHROMA_PATH: /data/chroma
+    volumes:
+      - chroma_data:/data/chroma
+    depends_on:
+      neo4j:
+        condition: service_healthy
+    restart: unless-stopped
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    environment:
+      API_URL: http://backend:8000
+    depends_on:
+      - backend
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.hybrid-rag.rule=Host(`${RAG_DOMAIN:?Set RAG_DOMAIN in .env}`)"
+      - "traefik.http.routers.hybrid-rag.entrypoints=websecure"
+      - "traefik.http.routers.hybrid-rag.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.hybrid-rag.middlewares=hybrid-rag-auth"
+      - "traefik.http.middlewares.hybrid-rag-auth.basicauth.users=${RAG_BASIC_AUTH:?Set RAG_BASIC_AUTH in .env}"
+      - "traefik.http.services.hybrid-rag.loadbalancer.server.port=8501"
+    restart: unless-stopped
+
+volumes:
+  neo4j_data:
+  chroma_data:
