@@ -1,4 +1,4 @@
-# Hybrid RAG
+# Hybrid RAG Chat System
 
 Ask questions about your documents and inspect the passages used to answer them. The app combines **vector search** with a **knowledge graph**, then uses OpenAI to write an answer with source references.
 
