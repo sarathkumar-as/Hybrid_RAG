@@ -8,7 +8,7 @@ from neo4j import GraphDatabase
 from openai import OpenAI
 
 from . import config
-from .core import citations_valid, clean_entities, document_chunks, fuse, heading_query, matching_heading_ids, parse_json
+from .core import citations_valid, clean_entities, document_chunks, evidence_fallback, fuse, heading_query, matching_heading_ids, parse_json
 
 log = logging.getLogger(__name__)
 
@@ -298,12 +298,15 @@ class RAGService:
             answer = fixed.strip() if isinstance(fixed, str) and fixed.strip() else "I cannot confirm the answer from the uploaded documents."
             cited = set(re.findall(r"\[S\d+\]", answer))
             abstains = answer.lower().startswith(("i cannot find", "i cannot confirm"))
-        if not abstains and not citations_valid(answer, valid):
-            answer = "I cannot confirm the answer from the uploaded documents. Please ask a more specific question."
-            cited = set()
-        # Only return passages actually cited, so the UI never implies unused
-        # retrieval results were evidence for the answer.
-        used_sources = [source for source in sources if f"[{source['label']}]" in cited]
-        return {"answer": answer, "sources": used_sources,
+        if abstains or not citations_valid(answer, valid):
+            # Keep the evidence visible instead of replacing a useful search
+            # result with a misleadingly generic failure. This is a quotation
+            # of stored source text, not a synthesized answer.
+            answer, used_sources = evidence_fallback(sources)
+            answer_mode = "source_excerpts"
+        else:
+            used_sources = [source for source in sources if f"[{source['label']}]" in cited]
+            answer_mode = "cited_answer"
+        return {"answer": answer, "sources": used_sources, "answer_mode": answer_mode,
                 "retrieval": {"vector_matches": len(vector_ids), "graph_matches": len(graph_ids)},
                 "elapsed_ms": round((time.monotonic() - started) * 1000)}

@@ -1,9 +1,11 @@
 import os
+from pathlib import Path
 
 import requests
 import streamlit as st
 
 API = os.getenv("API_URL", "http://backend:8000").rstrip("/")
+PROCESS_GIF = Path(__file__).parent / "assets" / "rag_process.gif"
 st.set_page_config(page_title="Hybrid RAG Chat System", page_icon="🧠", layout="wide", initial_sidebar_state="expanded")
 st.markdown("""<style>
 .block-container {max-width:1240px;padding-top:1.8rem;padding-bottom:2rem}
@@ -13,6 +15,7 @@ h1,h2,h3 {letter-spacing:-.025em}
 .hero {padding:10px 0 18px}
 .hero h1 {font-size:2.25rem;margin:0;color:#f8fafc}
 .hero p {margin:7px 0 0;color:#94a3b8}
+.hero {border-bottom:1px solid #293a50;margin-bottom:16px}
 .workflow {background:#172238;border:1px solid #34475f;border-radius:14px;padding:16px 19px;margin:12px 0 18px;color:#dceafb}
 .workflow strong {color:#f7fafc}
 .workflow small {color:#adc0d6}
@@ -28,6 +31,9 @@ h1,h2,h3 {letter-spacing:-.025em}
 div.stButton>button[kind="primary"],div.stFormSubmitButton>button[kind="primary"] {background:#2185e3;color:#fff;border-radius:10px}
 [data-testid="stMetric"] {border:1px solid #303d51;border-radius:12px;padding:14px;background:#171e2b}
 [data-testid="stChatMessage"] {border:1px solid #283549;border-radius:13px;background:#141b28}
+[data-testid="stChatMessage"] p {line-height:1.6}
+.answer-tag {display:inline-block;border:1px solid #365578;border-radius:999px;padding:3px 10px;margin:0 0 9px;color:#9dcafa;font-size:.78rem;font-weight:700}
+.question-tag {color:#a7c5e7;font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px}
 </style>""", unsafe_allow_html=True)
 
 
@@ -155,8 +161,12 @@ with chat_tab:
                 st.rerun()
         for turn in st.session_state.chat_history:
             with st.chat_message("user"):
+                st.markdown('<div class="question-tag">Your question</div>', unsafe_allow_html=True)
                 st.markdown(turn["question"])
             with st.chat_message("assistant"):
+                mode = turn.get("answer_mode", "cited_answer")
+                label = "Closest source passages" if mode == "source_excerpts" else "Answer with citations"
+                st.markdown(f'<span class="answer-tag">{label}</span>', unsafe_allow_html=True)
                 st.markdown(turn["answer"])
                 if turn.get("sources"):
                     with st.expander("Sources used in this answer"):
@@ -181,7 +191,11 @@ with chat_tab:
         elif scope == "Choose documents" and not chosen:
             st.warning("Select at least one indexed document.")
         else:
-            with st.spinner("Searching documents and preparing a cited answer…"):
+            processing = st.empty()
+            with processing.container():
+                st.markdown("**Your question:** " + question.strip())
+                st.image(str(PROCESS_GIF), caption="Reading → retrieving → checking evidence → preparing the response", width=600)
+            with st.spinner("Checking retrieved passages and citations…"):
                 try:
                     request_data = {"question": question.strip()}
                     if scope == "Choose documents":
@@ -190,10 +204,13 @@ with chat_tab:
                     if response.ok:
                         result = response.json()
                         st.session_state.chat_history.append({"question": question.strip(), **result})
+                        processing.empty()
                         st.rerun()
                     else:
+                        processing.empty()
                         st.error(request_error(response))
                 except requests.RequestException as exc:
+                    processing.empty()
                     st.error(f"Query connection error: {exc}")
 
 with documents_tab:

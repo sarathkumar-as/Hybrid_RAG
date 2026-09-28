@@ -109,22 +109,44 @@ def matching_heading_ids(question: str, ids: list[str], documents: list[str]) ->
     heading = heading_query(question)
     if not heading:
         return []
-    pattern = re.compile(r"(?im)^\s*(?:#{1,6}\s*)?" + re.escape(heading) + r"\s*:(?:\s|$)")
+    pattern = re.compile(
+        r"(?im)^[ \t]*(?:#{1,6}[ \t]*)?" + re.escape(heading)
+        + r"[ \t]*(?::[ \t]*(?:\n|$)|\n|$)"
+    )
     return [cid for cid, body in zip(ids, documents) if pattern.search(body)]
 
 
 def citations_valid(answer: str, labels: set[str]) -> bool:
-    """Require known citations on every factual line, including headings."""
+    """Require known citations on factual lines; permit Markdown section labels."""
     if not answer.strip():
         return False
     lines = [line.strip() for line in answer.splitlines() if line.strip()]
     if not lines:
         return False
+    factual_lines = 0
     for line in lines:
+        # A Markdown heading organizes cited bullets; it does not assert a
+        # separate fact. Requiring a citation here rejected otherwise valid
+        # answers whenever the model added a heading.
+        if re.fullmatch(r"#{1,6}\s+[^\n]+", line):
+            continue
+        factual_lines += 1
         found = set(re.findall(r"\[S\d+\]", line))
         if not found or not found <= labels:
             return False
-    return True
+    return factual_lines > 0
+
+
+def evidence_fallback(sources: list[dict], limit: int = 2) -> tuple[str, list[dict]]:
+    """Show verbatim evidence when a generated answer cannot be verified."""
+    selected = [source for source in sources if source.get("excerpt", "").strip()][:limit]
+    if not selected:
+        return "I could not find supporting text in the selected documents.", []
+    lines = ["I could not verify a direct answer. These are the closest indexed passages:"]
+    for source in selected:
+        excerpt = " ".join(source["excerpt"].split())[:700]
+        lines.append(f"> {excerpt} [{source['label']}]")
+    return "\n\n".join(lines), selected
 
 
 def fuse(vector_ids: list[str], graph_ids: list[str], limit: int = 6) -> list[tuple[str, float]]:

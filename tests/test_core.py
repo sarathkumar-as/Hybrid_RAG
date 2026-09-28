@@ -4,7 +4,7 @@ from pypdf import PdfWriter
 
 from docx import Document
 
-from backend.core import citations_valid, clean_entities, document_chunks, fuse, heading_query, matching_heading_ids, pdf_chunks
+from backend.core import citations_valid, clean_entities, document_chunks, evidence_fallback, fuse, heading_query, matching_heading_ids, pdf_chunks
 
 
 def test_every_factual_line_requires_a_real_source():
@@ -12,7 +12,16 @@ def test_every_factual_line_requires_a_real_source():
     assert citations_valid("- Vector search [S1]\n- Graph search [S2]", labels)
     assert not citations_valid("- Vector search [S1]\n- Invented claim", labels)
     assert not citations_valid("Invented claim [S9]", labels)
-    assert not citations_valid("# Unsupported heading\nSupported detail [S1]", labels)
+    assert citations_valid("# Data storage\nSupported detail [S1]", labels)
+    assert not citations_valid("# Heading without any factual answer", labels)
+
+
+def test_unverified_answer_exposes_source_text_without_inventing_claims():
+    sources = [{"label": "S1", "excerpt": "Object storage (S3-like) holds media files.", "filename": "design.pdf"}]
+    answer, selected = evidence_fallback(sources)
+    assert "Object storage (S3-like) holds media files. [S1]" in answer
+    assert selected == sources
+    assert evidence_fallback([])[1] == []
 
 
 def test_short_heading_prioritizes_actual_section():
@@ -22,6 +31,8 @@ def test_short_heading_prioritizes_actual_section():
     documents = ["Frontend: renders pages. Backend mentioned later.",
                  "Backend:\n- Node.js + TypeScript\n- NestJS\nFrontend: UI"]
     assert matching_heading_ids("Backend:", ids, documents) == ["answer"]
+    assert matching_heading_ids("Data Storage Layout", ["one", "two"],
+                                ["Data Storage Layout\nObject storage", "The Data Storage Layout is shown elsewhere."]) == ["one"]
 
 
 def test_ranking_rewards_both_retrievers():

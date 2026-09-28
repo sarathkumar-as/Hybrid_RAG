@@ -5,7 +5,7 @@ The score screenshot rated Automation 6/10, Reliability 5/10, Code Quality 4/10,
 | Area | Evidence in this package | How to confirm |
 | --- | --- | --- |
 | Automation | Upload indexes extracted passages in Chroma and graph concepts in Neo4j; Chat searches both. | Index a test document, open Documents and Knowledge Graph, and ask a matching question. |
-| Reliability | All files in an upload batch are type/size checked before indexing starts; unsupported citation markers and uncited answer lines are rejected. | Try an invalid second file and confirm the first was not indexed; inspect answer citations. A failed external API call can still interrupt a batch. |
+| Reliability | All files in an upload batch are type/size checked before indexing starts; unsupported citation markers and uncited factual lines are rejected. Standalone Markdown headings are allowed. When the answer review cannot verify a claim, the app quotes the closest indexed passages with their source labels. | Try a section-heading question and an absent-answer question; inspect exact source text. A failed external API call can still interrupt a batch. |
 | Code quality | Focused tests cover heading search, ranking, citations, DOCX/Markdown extraction, and blank scanned PDFs. GitHub Actions runs these tests on push. | Check the GitHub Actions “Project checks” result and review `backend/`, `frontend/`, and `tests/`. |
 | Documentation | README explains the app, actual public VPS setup, privacy, local startup, repository update, and verification. | Follow its local Docker instructions and compare the architecture diagram with the running app. |
 
@@ -15,6 +15,7 @@ The score screenshot rated Automation 6/10, Reliability 5/10, Code Quality 4/10,
 2. Open `http://localhost:8501`; confirm status is ready and saved counts load.
 3. Upload a small TXT containing a unique sentence. Confirm Latest indexing run counts update and Documents contains its passages.
 4. Ask a question answered explicitly in that sentence. Confirm `[S1]` points to the same text; check that an unrelated question abstains. An AI answer must still be checked by a person.
+   Confirm the question appears above the answer and the animated process graphic appears while the search runs. An unverified generated answer should show quoted source passages, clearly labeled as passages rather than a direct answer.
 5. With a private admin token configured, delete the test document. Confirm it disappears from Documents and graph totals update. Never test Clear all against valuable data.
 6. Refresh the site; saved indexes should persist in Docker volumes. Do not run `docker compose down -v`.
 

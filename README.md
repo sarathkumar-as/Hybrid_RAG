@@ -2,7 +2,7 @@
 
 Upload a PDF, Word, text, or Markdown file. Ask a question in everyday language. The app finds passages and shows sources alongside its answer so you can check the original text.
 
-**Website:** https://raghybrid.sbs · **Repository:** https://github.com/sarathkumar-as/Hybrid_RAG_Project
+**Website:** https://raghybrid.sbs · **Repository:** https://github.com/sarathkumar-as/Hybrid_RAG
 
 > AI answers can be wrong. Check the cited passage. Scanned PDFs need OCR before upload. The public website has no separate user accounts.
 
@@ -13,6 +13,7 @@ Upload a PDF, Word, text, or Markdown file. Ask a question in everyday language.
 3. Wait for indexing to finish. **Latest indexing run** starts at zero per browser session and updates after a successful upload. **Knowledge Graph** shows saved totals across sessions.
 4. In **Chat**, ask a specific question. Optionally select which documents to search.
 5. Expand **Sources used in this answer** and check the passages yourself.
+   While searching, the question and an animated Read → Retrieve → Verify → Answer graphic appear. If an answer cannot be verified, the app displays the closest indexed passages as quotations instead of inventing a claim.
 6. In **Documents**, open extracted text or delete an index. Deletion requires a separate administrator secret; ordinary visitors can browse and ask without a password.
 
 ## Architecture
@@ -50,7 +51,7 @@ You need Docker Desktop, VS Code, and a valid OpenAI API key. API use is billed 
 
 1. In VS Code, open the folder containing `docker-compose.yml`.
 2. Start Docker Desktop. Open **Terminal → New Terminal**; these commands run in **PowerShell on your computer**.
-3. Run `Copy-Item .env.example .env`.
+3. If `.env` is missing, run `Copy-Item .env.example .env`. Keep an existing `.env` unchanged.
 4. Edit `.env`. Set `OPENAI_API_KEY` and a strong `NEO4J_PASSWORD`. Set a separate long `ADMIN_DELETE_TOKEN` if you want to use Delete. Keep `.env` private.
 5. Run `docker compose up -d --build` and then `docker compose ps`. Wait until Neo4j is healthy.
 6. Open http://localhost:8501. Index a small test file, ask a question, and inspect its cited passage.
@@ -74,23 +75,23 @@ Check staged names before committing. Never upload `.env`, API keys, private doc
 
 ## Deploy updates to the existing Hostinger VPS
 
-The current website uses Traefik for HTTPS and has no website login. The deletion secret remains private. The VPS also runs other services: keep its existing proxy setup, Compose edits, `.env`, and Docker volumes.
+The current website uses Traefik for HTTPS and has no website login. The deletion secret remains private. The VPS also runs other services: keep its existing proxy setup, `.env`, and Docker volumes.
 
 1. Push updated code to GitHub and check that the files appear there.
-2. Open the **Hostinger VPS terminal** (the following commands run there, not in Windows PowerShell) and run `cd /opt/hybrid-rag`.
-3. Check `git status` and run `git fetch origin main`. Review local changes; update application files while preserving VPS Compose settings and `.env`.
+2. Open the **Hostinger VPS terminal** (the following commands run there, not in Windows PowerShell). The prepared deployment checkout is `/opt/hybrid-rag-next`; `/opt/hybrid-rag` is an older copy.
+3. Run `git -C /opt/hybrid-rag-next status --short` and `git -C /opt/hybrid-rag-next fetch origin`. If the checkout is clean, run `git -C /opt/hybrid-rag-next checkout --detach origin/main`. Compare its commit with the one just pushed from VS Code.
 4. Put a long `ADMIN_DELETE_TOKEN` in the VPS's private `.env` if you need administrator deletion. Never paste the token into GitHub or a screenshot.
 5. Validate and rebuild the app:
 
 ```bash
-docker compose -p hybrid-rag -f docker-compose.yml -f docker-compose.traefik.yml config --quiet
-docker compose -p hybrid-rag -f docker-compose.yml -f docker-compose.traefik.yml up -d --no-deps --build backend frontend
-docker compose -p hybrid-rag -f docker-compose.yml -f docker-compose.traefik.yml ps
+docker compose -p hybrid-rag --env-file /opt/hybrid-rag-next/.env -f /opt/hybrid-rag-next/docker-compose.traefik.yml config --quiet
+docker compose -p hybrid-rag --env-file /opt/hybrid-rag-next/.env -f /opt/hybrid-rag-next/docker-compose.traefik.yml up -d --build backend frontend
+docker compose -p hybrid-rag --env-file /opt/hybrid-rag-next/.env -f /opt/hybrid-rag-next/docker-compose.traefik.yml ps
 ```
 
-6. Refresh https://raghybrid.sbs. Index a **test** document and verify an answer against its source. For errors, run `docker compose -p hybrid-rag -f docker-compose.yml -f docker-compose.traefik.yml logs --tail=100 backend frontend neo4j`.
+6. Refresh https://raghybrid.sbs. Index a **test** document and verify an answer against its source. For errors, run `docker logs --tail 100 hybrid-rag-backend-1` and `docker logs --tail 100 hybrid-rag-frontend-1`.
 
-The checked-in Traefik configuration is an example; keep VPS-specific networking edits. An archive does not deploy itself to the live website.
+The checked-in Traefik configuration must be checked against the VPS's actual network before deployment. An archive does not deploy itself to the live website.
 
 ## API and limits
 
@@ -108,3 +109,5 @@ Default limits: five files per request, 20 MB per file, 100 PDF pages, 150 passa
 ## Verification
 
 With Python 3.11 and dependencies installed, run `python -m pytest -q` from the project folder. Full integration checks also need Neo4j, a valid OpenAI key, and a test document. See [QUALITY_CHECK.md](QUALITY_CHECK.md) for repeatable manual checks and test limits. A screenshot score is subjective; review working behavior, test results, and cited answers to assess this project.
+
+The source-excerpt fallback is not a guaranteed answer: it quotes stored text so a person can check whether it is relevant. Test both a question that has an explicit answer and a question whose answer is absent. The public website currently has no account isolation, so use only documents you intend to make visible to its visitors.
